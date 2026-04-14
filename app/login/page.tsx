@@ -2,13 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,9 +14,16 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
     setLoading(false);
-    if (error) return setError(error.message);
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: "Login failed" }));
+      return setError(error || "Login failed");
+    }
     router.push("/dashboard");
     router.refresh();
   }
@@ -28,10 +32,10 @@ export default function LoginPage() {
     <main className="container">
       <form className="card" onSubmit={onSubmit}>
         <h1>Log in</h1>
-        <p className="sub">Welcome back</p>
+        <p className="sub">Use admin / admin</p>
         <div className="field">
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <label>Username</label>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
         </div>
         <div className="field">
           <label>Password</label>
@@ -41,7 +45,6 @@ export default function LoginPage() {
           {loading ? "Signing in..." : "Sign in"}
         </button>
         {error && <div className="error">{error}</div>}
-        <p className="muted">No account? <Link href="/signup">Sign up</Link></p>
       </form>
     </main>
   );

@@ -6,8 +6,7 @@ export default function Home() {
       <div className="card">
         <h1>Capstone Milestone</h1>
         <p className="sub">OPM → Code — deployment test</p>
-        <Link href="/login"><button className="primary">Login</button></Link>
-        <p className="muted"><Link href="/signup">Create an account</Link></p>
+        <Link href="/login" className="primary" style={{ display: "block", textAlign: "center", textDecoration: "none" }}>Login</Link>
       </div>
     </main>
   );

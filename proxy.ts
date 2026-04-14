@@ -1,41 +1,18 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => request.cookies.getAll(),
-        setAll: (toSet: { name: string; value: string; options: any }[]) => {
-          toSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
-          toSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const { data: { user } } = await supabase.auth.getUser();
-
+export function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  const isAuthRoute = path === "/login" || path === "/signup";
+  const session = request.cookies.get("session")?.value;
 
-  if (!user && !isAuthRoute && path !== "/") {
+  if (path.startsWith("/dashboard") && session !== "ok") {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  if (user && isAuthRoute) {
+  if (path === "/login" && session === "ok") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
-
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api).*)"],
 };
