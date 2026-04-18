@@ -43,6 +43,7 @@ export function createJob(input: {
             { stage: "semantic",       status: "pending", startedAt: now },
             { stage: "generate",       status: "pending", startedAt: now },
             { stage: "validate",       status: "pending", startedAt: now },
+            { stage: "deploy",         status: "pending", startedAt: now },
         ],
         done: false,
     };

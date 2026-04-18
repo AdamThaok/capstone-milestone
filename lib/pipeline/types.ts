@@ -8,7 +8,8 @@ export type StageId =
     | "rag"
     | "semantic"
     | "generate"
-    | "validate";
+    | "validate"
+    | "deploy";
 
 export type StageStatus = "pending" | "active" | "done" | "error";
 

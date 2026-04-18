@@ -18,11 +18,12 @@ import { deriveSpec }        from "./stage2-spec";
 import { buildSuperPrompt }  from "./stage3-rag";
 import { generateCode }      from "./stage4-codegen";
 import { validateGenerated } from "./stage5-validate";
+import { deployToCloud }     from "./stage6-deploy";
 import { updateStage, getJob, patchJob } from "./jobs";
 import type { StageId } from "./types";
 
 const STAGE_DELAY_MS   = 200;
-const STAGE_TIMEOUT_MS = 300_000;   // 5 min — Gemini-2.5-pro codegen is slow
+const STAGE_TIMEOUT_MS = 600_000;   // 10 min — deploy stage can exceed 5min
 const MAX_RETRIES      = 1;
 
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
@@ -86,7 +87,7 @@ export async function runPipeline(jobId: string) {
         validateInput({ filename: job.filename, format: job.format, filePath: job.filePath }),
     );
     if (!validation || !validation.valid) {
-        const remaining: StageId[] = ["parse", "rag", "semantic", "generate", "validate"];
+        const remaining: StageId[] = ["parse", "rag", "semantic", "generate", "validate", "deploy"];
         for (const s of remaining) markError(jobId, s, "skipped: input validation failed");
         return;
     }
@@ -134,6 +135,17 @@ export async function runPipeline(jobId: string) {
             spec,
             opmModel,
             outputDir: getJob(jobId)?.outputDir,
+        }),
+    );
+
+    // Stage 6 (bonus): deploy to cloud. Skips gracefully if tokens absent.
+    await sleep(STAGE_DELAY_MS);
+    const j = getJob(jobId);
+    await runStage(jobId, "deploy", () =>
+        deployToCloud({
+            jobId,
+            filename:  job.filename,
+            outputDir: j?.outputDir,
         }),
     );
 }

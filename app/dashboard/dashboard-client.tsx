@@ -10,7 +10,8 @@ type StageId =
     | "rag"
     | "semantic"
     | "generate"
-    | "validate";
+    | "validate"
+    | "deploy";
 
 type StageResult = {
     stage: StageId;
@@ -35,9 +36,10 @@ const STAGE_LABELS: Record<StageId, string> = {
     validate_input: "0. Validate Input Format & Completeness",
     parse:          "1a. Parse OPM Elements (fork)",
     rag:            "1b. Retrieve ISO 19450 Rules (RAG, fork)",
-    semantic:       "2. Semantic Analysis & Blueprint (Gemini + ChatGPT)",
-    generate:       "3. Full-Stack Code Generation (Claude)",
+    semantic:       "2. Semantic Analysis & Blueprint (Gemini)",
+    generate:       "3. Full-Stack Code Generation (Gemini)",
     validate:       "4. Validate + Refinement Loop",
+    deploy:         "5. Deploy to GitHub + Railway",
 };
 
 type Mapping = { opmId: string; artifact: string };
@@ -236,8 +238,41 @@ export default function DashboardClient() {
 
                         {job?.done && job.stages.every((s) => s.status === "done") && (
                             <>
+                                {(() => {
+                                    const deploy = job.stages.find((s) => s.stage === "deploy")?.output as
+                                        | { skipped?: boolean; github?: { html_url: string }; railway?: { railwayUrl: string; backendUrl?: string; frontendUrl?: string } }
+                                        | undefined;
+                                    if (!deploy || deploy.skipped) return null;
+                                    return (
+                                        <>
+                                            <div style={{ height: "1.5rem" }} />
+                                            <h3>Your app is live</h3>
+                                            <div style={{ display: "flex", flexDirection: "column", gap: ".4rem" }}>
+                                                {deploy.railway?.frontendUrl && (
+                                                    <a className="primary" style={{ textAlign: "center", textDecoration: "none" }} href={deploy.railway.frontendUrl} target="_blank" rel="noreferrer">
+                                                        Open app: {deploy.railway.frontendUrl}
+                                                    </a>
+                                                )}
+                                                {deploy.railway?.backendUrl && (
+                                                    <a href={deploy.railway.backendUrl} target="_blank" rel="noreferrer" className="hint" style={{ textDecoration: "underline" }}>
+                                                        API: {deploy.railway.backendUrl}
+                                                    </a>
+                                                )}
+                                                {deploy.github?.html_url && (
+                                                    <a href={deploy.github.html_url} target="_blank" rel="noreferrer" className="hint" style={{ textDecoration: "underline" }}>
+                                                        Source on GitHub: {deploy.github.html_url}
+                                                    </a>
+                                                )}
+                                                <a href={deploy.railway?.railwayUrl} target="_blank" rel="noreferrer" className="hint" style={{ textDecoration: "underline" }}>
+                                                    Railway dashboard (for this project)
+                                                </a>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+
                                 <div style={{ height: "1.5rem" }} />
-                                <h3>3. Traceability Report</h3>
+                                <h3>Traceability Report</h3>
                                 <p className="hint">OPM elements → generated code artifacts.</p>
                                 <div>
                                     {extractTrace(job).map((t, i) => (
@@ -284,6 +319,11 @@ function stageExtra(s: StageResult): string | null {
     if (s.stage === "generate") {
         const total = o.totalFiles;
         if (typeof total === "number") return `done · ${total} files`;
+    }
+    if (s.stage === "deploy") {
+        if ((o as { skipped?: boolean }).skipped) return "skipped";
+        const railway = (o as { railway?: { frontendUrl?: string } }).railway;
+        if (railway?.frontendUrl) return "live";
     }
     return null;
 }

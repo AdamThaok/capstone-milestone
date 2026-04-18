@@ -42,42 +42,40 @@ Produce a single consolidated "super prompt" that a code generator can follow
 to emit a complete, compilable, ZERO-CONFIG full-stack project matching the
 OPM model.
 
-Target stack: React + Vite (frontend), FastAPI + Python (backend),
-Firebase FIRESTORE EMULATOR (local in-memory DB — no Firebase account needed),
-docker-compose (orchestration).
+Target stack: React + Vite (frontend), FastAPI + Python + SQLAlchemy (backend),
+PostgreSQL (database), deployed to Railway (cloud host).
 
-NON-TECHNICAL USER REQUIREMENTS (HARD):
-- Target audience: someone who has never used a terminal before.
-- docker-compose.yml MUST launch TWO services: backend (FastAPI + firebase-admin)
-  and frontend (React + nginx). Both exposed on fixed ports.
-- Backend connects to user's OWN Firebase Firestore via service account JSON
-  at \`backend/firebase-credentials.json\`. It must fail with a CLEAR human
-  message (not a stacktrace) if that file is missing — "Missing
-  firebase-credentials.json. See SETUP.md step 4."
-- Backend MUST run a seed script on first startup (seed.py) that inserts
-  3–5 sample rows per collection derived from OPM object names/states.
-  Script must be idempotent (skip collection if already populated).
-- Frontend uses axios to call backend only. No firebase JS SDK on frontend.
-- Emit SETUP.md as the primary entry-point document. It must contain:
-  1. "What you need" — links to install Docker Desktop (Windows/Mac/Linux)
-  2. "Create a free Firebase project" — link to console.firebase.google.com
-     → instructions: "Add project" → name it anything → disable Analytics
-     → wait → "Build → Firestore Database → Create database → Start in
-     production mode → pick region → Enable"
-  3. "Download your credentials" — "Project settings (gear icon) →
-     Service accounts → Generate new private key → save as
-     \`firebase-credentials.json\` inside the \`backend\` folder"
-  4. "Run it" — open terminal in project folder → \`docker compose up\` →
-     wait for "Ready" → open http://localhost:5173
-  5. Troubleshooting: "port already in use", "docker not recognized",
-     "credentials error"
-- Emit README.md as a one-page summary pointing to SETUP.md.
-- Include scripts/check-setup.sh and scripts/check-setup.bat that verify
-  Docker + credentials file exist before compose runs, with friendly
-  error messages.
-- CORS: backend allows frontend origin only; no wildcards.
-- Include .gitignore that excludes firebase-credentials.json — never
-  committable.
+ZERO-CONFIG CLOUD DEPLOY REQUIREMENTS (HARD):
+- Target: project is auto-deployed to Railway by the dumper orchestrator.
+  The end user NEVER runs Docker, NEVER installs anything, NEVER creates
+  a Firebase project. They click a live URL and use the app.
+- Backend MUST use SQLAlchemy + asyncpg driver + PostgreSQL. NO Firebase,
+  NO Firestore, NO firebase-admin.
+- Backend reads DATABASE_URL from env (Railway injects it automatically
+  when a Postgres plugin is attached). Default to postgresql+asyncpg://
+  prefix. If DATABASE_URL starts with "postgres://", code must rewrite to
+  "postgresql+asyncpg://" at startup.
+- Backend MUST run Alembic migrations (or metadata.create_all) on startup
+  to create tables before serving requests.
+- Backend MUST run a seed.py that inserts 3–5 sample rows per table,
+  derived from OPM object names/states. Idempotent.
+- Frontend uses axios to call backend via VITE_API_BASE_URL env var.
+  Railway sets VITE_API_BASE_URL to the backend service's public URL at
+  build time.
+- Emit Dockerfile for BOTH services (Railway builds from Dockerfile).
+- docker-compose.yml still emitted for local dev convenience (postgres +
+  backend + frontend), but NOT required for end users.
+- Emit railway.json at repo root describing two services (backend,
+  frontend) and one Postgres plugin.
+- Port configuration: backend reads PORT env (Railway default 8080);
+  frontend reads PORT env for nginx listen directive.
+- Emit README.md with ONE link at the top: "Live app: {{RAILWAY_URL}}".
+  Leave the placeholder literal — the dumper replaces it after deploy.
+- CORS: backend allows the frontend origin (also a Railway URL) via env
+  var FRONTEND_ORIGIN.
+- Include .gitignore that excludes .env, node_modules, __pycache__, dist.
+- NO firebase-credentials.json, NO service account JSON, NO Firebase
+  references anywhere.
 
 The super prompt must:
 - Enumerate every entity, endpoint, screen, business rule.
