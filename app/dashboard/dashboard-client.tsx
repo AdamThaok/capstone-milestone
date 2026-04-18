@@ -40,15 +40,7 @@ const STAGE_LABELS: Record<StageId, string> = {
     validate:       "4. Validate + Refinement Loop",
 };
 
-const MOCK_TRACE = [
-    { from: "Object: Customer",            to: "Firestore collection: customers" },
-    { from: "Object: Order",               to: "Firestore collection: orders" },
-    { from: "Process: Place Order",        to: "POST /orders (FastAPI)" },
-    { from: "Process: Cancel Order",       to: "DELETE /orders/:id" },
-    { from: "State: Pending → Paid",       to: "transitions.py:pay()" },
-    { from: "State: Paid → Shipped",       to: "transitions.py:ship()" },
-    { from: "Aggregation: Order ◇ Item",   to: "items subcollection" },
-];
+type Mapping = { opmId: string; artifact: string };
 
 export default function DashboardClient() {
     const router = useRouter();
@@ -248,11 +240,11 @@ export default function DashboardClient() {
                                 <h3>3. Traceability Report</h3>
                                 <p className="hint">OPM elements → generated code artifacts.</p>
                                 <div>
-                                    {MOCK_TRACE.map((t, i) => (
+                                    {extractTrace(job).map((t, i) => (
                                         <div key={i} className="trace-row">
-                                            <span className="from">{t.from}</span>
+                                            <span className="from">{t.opmId}</span>
                                             <span className="arrow">→</span>
-                                            <span className="to">{t.to}</span>
+                                            <span className="to">{t.artifact}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -267,6 +259,15 @@ export default function DashboardClient() {
             </main>
         </div>
     );
+}
+
+function extractTrace(job: JobState): Mapping[] {
+    const v = job.stages.find((s) => s.stage === "validate");
+    if (!v || v.status !== "done" || !v.output) return [];
+    const out = v.output as Record<string, unknown>;
+    const cov = out.coverageVerification as Record<string, unknown> | undefined;
+    const map = cov?.mapping as Mapping[] | undefined;
+    return Array.isArray(map) ? map : [];
 }
 
 function stageExtra(s: StageResult): string | null {

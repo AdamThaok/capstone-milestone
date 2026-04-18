@@ -4,15 +4,21 @@ import type { JobState, StageResult } from "./types";
 
 const jobs = new Map<string, JobState>();
 
-export function createJob(input: { filename: string; format: string; targetStack: string }): JobState {
+export function createJob(input: {
+    filename: string;
+    format: string;
+    targetStack: string;
+    filePath?: string;
+}): JobState {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const job: JobState = {
         id,
-        filename: input.filename,
-        format: input.format,
+        filename:    input.filename,
+        filePath:    input.filePath,
+        format:      input.format,
         targetStack: input.targetStack,
-        createdAt: now,
+        createdAt:   now,
         stages: [
             { stage: "validate_input", status: "pending", startedAt: now },
             { stage: "parse",          status: "pending", startedAt: now },

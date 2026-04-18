@@ -19,10 +19,33 @@ import { validateGenerated } from "./stage5-validate";
 import { updateStage, getJob } from "./jobs";
 import type { StageId } from "./types";
 
-const STAGE_DELAY_MS = 1000;
+const STAGE_DELAY_MS   = 1000;
+const STAGE_TIMEOUT_MS = 60_000;
+const MAX_RETRIES      = 2;
 
 function sleep(ms: number) {
     return new Promise((r) => setTimeout(r, ms));
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+        p.then((v) => { clearTimeout(t); resolve(v); },
+               (e) => { clearTimeout(t); reject(e); });
+    });
+}
+
+async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+    let last: unknown;
+    for (let i = 0; i <= MAX_RETRIES; i++) {
+        try {
+            return await withTimeout(fn(), STAGE_TIMEOUT_MS, label);
+        } catch (e) {
+            last = e;
+            if (i < MAX_RETRIES) await sleep(500 * (i + 1));
+        }
+    }
+    throw last instanceof Error ? last : new Error(`${label} failed`);
 }
 
 function markActive(jobId: string, stage: StageId) {
@@ -37,48 +60,61 @@ function markError(jobId: string, stage: StageId, error: string) {
     updateStage(jobId, stage, { status: "error", finishedAt: new Date().toISOString(), error });
 }
 
+// Runs a stage fn; records active/done/error status automatically.
+async function runStage<T>(
+    jobId: string,
+    stage: StageId,
+    fn: () => Promise<T>,
+): Promise<T | null> {
+    markActive(jobId, stage);
+    try {
+        const out = await withRetry(fn, stage);
+        markDone(jobId, stage, out);
+        return out;
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        markError(jobId, stage, msg);
+        console.error(`[pipeline ${jobId}] ${stage} failed:`, msg);
+        return null;
+    }
+}
+
 export async function runPipeline(jobId: string) {
     const job = getJob(jobId);
     if (!job) throw new Error(`job ${jobId} not found`);
 
     // Stage 0: input validation (guard)
-    markActive(jobId, "validate_input");
     await sleep(500);
-    const validation = await validateInput({ filename: job.filename, format: job.format });
-    markDone(jobId, "validate_input", validation);
-    if (!validation.valid) {
-        // Abort — propagate error through remaining stages
+    const validation = await runStage(jobId, "validate_input", () =>
+        validateInput({ filename: job.filename, format: job.format, filePath: job.filePath }),
+    );
+    if (!validation || !validation.valid) {
         const remaining: StageId[] = ["parse", "rag", "semantic", "generate", "validate"];
         for (const s of remaining) markError(jobId, s, "skipped: input validation failed");
         return;
     }
 
-    // Stages 1 + 2 run in parallel (per activity diagram fork)
-    markActive(jobId, "parse");
-    markActive(jobId, "rag");
+    // Stages 1 + 1b run in parallel (activity diagram fork)
     await sleep(STAGE_DELAY_MS);
     const [opmModel, superPromptPartial] = await Promise.all([
-        parseOpm({ filename: job.filename, format: job.format }),
-        buildSuperPrompt(null, null), // RAG retrieval runs without the spec yet
+        runStage(jobId, "parse", () =>
+            parseOpm({ filename: job.filename, format: job.format, filePath: job.filePath }),
+        ),
+        runStage(jobId, "rag", () => buildSuperPrompt(null, null)),
     ]);
-    markDone(jobId, "parse", opmModel);
-    markDone(jobId, "rag",   superPromptPartial);
+    if (!opmModel || !superPromptPartial) return;
 
-    // Stage 3: semantic interpretation (Gemini) — join point
-    markActive(jobId, "semantic");
+    // Stage 2: semantic (join)
     await sleep(STAGE_DELAY_MS);
-    const spec = await deriveSpec(opmModel);
-    markDone(jobId, "semantic", spec);
+    const spec = await runStage(jobId, "semantic", () => deriveSpec(opmModel));
+    if (!spec) return;
 
-    // Stage 4: code generation (Claude)
-    markActive(jobId, "generate");
+    // Stage 3: code gen
     await sleep(STAGE_DELAY_MS);
-    const fileTree = await generateCode(superPromptPartial);
-    markDone(jobId, "generate", fileTree);
+    const fileTree = await runStage(jobId, "generate", () => generateCode(superPromptPartial));
+    if (!fileTree) return;
 
-    // Stage 5: validation + refinement loop
-    markActive(jobId, "validate");
+    // Stage 4: validate
     await sleep(STAGE_DELAY_MS);
-    const report = await validateGenerated(fileTree);
-    markDone(jobId, "validate", report);
+    await runStage(jobId, "validate", () => validateGenerated(fileTree));
 }

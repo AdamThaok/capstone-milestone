@@ -24,6 +24,7 @@ export type StageResult = {
 export type JobState = {
     id: string;
     filename: string;
+    filePath?: string;    // absolute path where the upload was persisted
     format: string;
     targetStack: string;
     createdAt: string;
