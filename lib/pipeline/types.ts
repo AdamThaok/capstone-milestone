@@ -25,6 +25,7 @@ export type JobState = {
     id: string;
     filename: string;
     filePath?: string;    // absolute path where the upload was persisted
+    outputDir?: string;   // absolute path of the generated project on disk
     format: string;
     targetStack: string;
     createdAt: string;

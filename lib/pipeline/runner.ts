@@ -1,14 +1,16 @@
-// Orchestrates the 6-stage pipeline per capstone activity diagram.
+// Orchestrates the pipeline per capstone activity diagram.
 //
 // Flow:
-//   0. Validate input → (if invalid, abort with error, emit error stage)
+//   0. Validate input (guard; abort on fail)
 //   fork:
-//     1. Parse OPM Elements
-//     2. Retrieve ISO 19450 RAG rules
+//     1.  Parse OPM elements
+//     1b. Retrieve ISO 19450 rules (fast, local/static for single-AI mode)
 //   join →
-//   3. Semantic Analysis + Blueprint (Gemini) → Prompt Composer (ChatGPT)
-//   4. Code Generation (Claude)
-//   5. Validate + Refinement Loop
+//   2.  Semantic Analysis → system spec
+//   3.  Compose super-prompt from (OPM, spec, rules)  — happens inside
+//       buildSuperPrompt() when real deps are available
+//   4.  Code generation (Claude/Gemini) + write files to disk
+//   5.  Build + refine loop (up to 3 iterations)
 
 import { validateInput }     from "./stage0-validate";
 import { parseOpm }          from "./stage1-parse";
@@ -16,16 +18,14 @@ import { deriveSpec }        from "./stage2-spec";
 import { buildSuperPrompt }  from "./stage3-rag";
 import { generateCode }      from "./stage4-codegen";
 import { validateGenerated } from "./stage5-validate";
-import { updateStage, getJob } from "./jobs";
+import { updateStage, getJob, patchJob } from "./jobs";
 import type { StageId } from "./types";
 
-const STAGE_DELAY_MS   = 1000;
-const STAGE_TIMEOUT_MS = 60_000;
-const MAX_RETRIES      = 2;
+const STAGE_DELAY_MS   = 200;
+const STAGE_TIMEOUT_MS = 180_000;
+const MAX_RETRIES      = 1;
 
-function sleep(ms: number) {
-    return new Promise((r) => setTimeout(r, ms));
-}
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -51,16 +51,13 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
 function markActive(jobId: string, stage: StageId) {
     updateStage(jobId, stage, { status: "active", startedAt: new Date().toISOString() });
 }
-
 function markDone(jobId: string, stage: StageId, output: unknown) {
     updateStage(jobId, stage, { status: "done", finishedAt: new Date().toISOString(), output });
 }
-
 function markError(jobId: string, stage: StageId, error: string) {
     updateStage(jobId, stage, { status: "error", finishedAt: new Date().toISOString(), error });
 }
 
-// Runs a stage fn; records active/done/error status automatically.
 async function runStage<T>(
     jobId: string,
     stage: StageId,
@@ -83,8 +80,8 @@ export async function runPipeline(jobId: string) {
     const job = getJob(jobId);
     if (!job) throw new Error(`job ${jobId} not found`);
 
-    // Stage 0: input validation (guard)
-    await sleep(500);
+    // Stage 0: input validation
+    await sleep(200);
     const validation = await runStage(jobId, "validate_input", () =>
         validateInput({ filename: job.filename, format: job.format, filePath: job.filePath }),
     );
@@ -94,27 +91,49 @@ export async function runPipeline(jobId: string) {
         return;
     }
 
-    // Stages 1 + 1b run in parallel (activity diagram fork)
+    // Stages 1 + 1b: parse OPM in parallel with RAG retrieval (static text
+    // for single-AI mode; just resolves quickly with the canonical ruleset).
     await sleep(STAGE_DELAY_MS);
-    const [opmModel, superPromptPartial] = await Promise.all([
+    const [opmModel, _ragStub] = await Promise.all([
         runStage(jobId, "parse", () =>
             parseOpm({ filename: job.filename, format: job.format, filePath: job.filePath }),
         ),
-        runStage(jobId, "rag", () => buildSuperPrompt(null, null)),
+        runStage(jobId, "rag", async () => ({
+            retrievalMode: "inline-iso-19450",
+            chunks: 8,
+            note:   "Static rules injected into super-prompt at stage 3 compose.",
+        })),
     ]);
-    if (!opmModel || !superPromptPartial) return;
+    if (!opmModel) return;
 
-    // Stage 2: semantic (join)
+    // Stage 2: semantic interpretation
     await sleep(STAGE_DELAY_MS);
     const spec = await runStage(jobId, "semantic", () => deriveSpec(opmModel));
     if (!spec) return;
 
-    // Stage 3: code gen
+    // Stage 3: code gen (super-prompt composed inside generateCode or via
+    // buildSuperPrompt() then Claude/Gemini). We fold compose+generate into
+    // one visible stage so the dashboard stays at 6 steps.
     await sleep(STAGE_DELAY_MS);
-    const fileTree = await runStage(jobId, "generate", () => generateCode(superPromptPartial));
+    const fileTree = await runStage(jobId, "generate", async () => {
+        const superPrompt = await buildSuperPrompt(opmModel, spec);
+        const gen = await generateCode(superPrompt, { jobId });
+        // Persist the generated tree path on the job for download route.
+        if (gen && typeof gen === "object" && "outputDir" in gen) {
+            patchJob(jobId, { outputDir: (gen as { outputDir?: string }).outputDir });
+        }
+        return gen;
+    });
     if (!fileTree) return;
 
-    // Stage 4: validate
+    // Stage 4 in doc (our stage 5): validate + refine
     await sleep(STAGE_DELAY_MS);
-    await runStage(jobId, "validate", () => validateGenerated(fileTree));
+    await runStage(jobId, "validate", () =>
+        validateGenerated(fileTree, {
+            jobId,
+            spec,
+            opmModel,
+            outputDir: getJob(jobId)?.outputDir,
+        }),
+    );
 }

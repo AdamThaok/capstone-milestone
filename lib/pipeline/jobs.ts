@@ -37,6 +37,12 @@ export function getJob(id: string): JobState | undefined {
     return jobs.get(id);
 }
 
+export function patchJob(id: string, patch: Partial<JobState>) {
+    const j = jobs.get(id);
+    if (!j) return;
+    Object.assign(j, patch);
+}
+
 export function updateStage(
     id: string,
     stage: StageResult["stage"],
