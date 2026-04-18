@@ -4,9 +4,9 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MODEL_TEXT   = "gemini-2.0-flash";       // cheap, fast, multimodal
-const MODEL_VISION = "gemini-2.0-flash";       // same model handles images
-const MODEL_CODEGEN = "gemini-2.0-flash-exp";  // bigger context for code emission
+const MODEL_TEXT    = "gemini-2.5-flash";   // fast + cheap for parse/spec/compose
+const MODEL_VISION  = "gemini-2.5-flash";   // same model handles images
+const MODEL_CODEGEN = "gemini-2.5-pro";     // stronger for code-gen output
 
 function client(): GoogleGenerativeAI {
     const key = process.env.GOOGLE_API_KEY;

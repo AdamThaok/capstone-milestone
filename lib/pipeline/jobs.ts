@@ -1,8 +1,25 @@
-// In-memory job store. Dev-only — production would use Firestore or Redis.
+// Disk-backed job store.
+// Survives dev-server restarts (Next HMR) and serverless cold starts.
+// Each job lives at <tmp>/opm-jobs/<id>.json. Pipeline writes every time
+// updateStage/patchJob runs so the dashboard keeps polling the current state.
 
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import type { JobState, StageResult } from "./types";
 
-const jobs = new Map<string, JobState>();
+const STORE_DIR = path.join(os.tmpdir(), "opm-jobs");
+
+function ensureDir() {
+    try { fs.mkdirSync(STORE_DIR, { recursive: true }); } catch { /* exists */ }
+}
+
+function jobPath(id: string) { return path.join(STORE_DIR, `${id}.json`); }
+
+function writeJob(job: JobState) {
+    ensureDir();
+    fs.writeFileSync(jobPath(job.id), JSON.stringify(job, null, 2), "utf-8");
+}
 
 export function createJob(input: {
     filename: string;
@@ -29,18 +46,24 @@ export function createJob(input: {
         ],
         done: false,
     };
-    jobs.set(id, job);
+    writeJob(job);
     return job;
 }
 
 export function getJob(id: string): JobState | undefined {
-    return jobs.get(id);
+    try {
+        const raw = fs.readFileSync(jobPath(id), "utf-8");
+        return JSON.parse(raw) as JobState;
+    } catch {
+        return undefined;
+    }
 }
 
 export function patchJob(id: string, patch: Partial<JobState>) {
-    const j = jobs.get(id);
+    const j = getJob(id);
     if (!j) return;
     Object.assign(j, patch);
+    writeJob(j);
 }
 
 export function updateStage(
@@ -48,12 +71,15 @@ export function updateStage(
     stage: StageResult["stage"],
     patch: Partial<StageResult>,
 ) {
-    const job = jobs.get(id);
+    const job = getJob(id);
     if (!job) return;
     const idx = job.stages.findIndex((s) => s.stage === stage);
     if (idx < 0) return;
     job.stages[idx] = { ...job.stages[idx], ...patch };
-    const allDone    = job.stages.every((s) => s.status === "done");
-    const anyError   = job.stages.some((s)  => s.status === "error");
+
+    const allDone  = job.stages.every((s) => s.status === "done");
+    const anyError = job.stages.some((s)  => s.status === "error");
     if (allDone || anyError) job.done = true;
+
+    writeJob(job);
 }
