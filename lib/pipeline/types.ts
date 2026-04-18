@@ -2,7 +2,13 @@
 // Each stage reads its input, emits a structured output.
 // Currently all stages return mock data; swap impls for real LLM calls later.
 
-export type StageId = "parse" | "semantic" | "rag" | "generate" | "validate";
+export type StageId =
+    | "validate_input"
+    | "parse"
+    | "rag"
+    | "semantic"
+    | "generate"
+    | "validate";
 
 export type StageStatus = "pending" | "active" | "done" | "error";
 

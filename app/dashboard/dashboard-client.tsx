@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type StageStatus = "pending" | "active" | "done" | "error";
-type StageId = "parse" | "semantic" | "rag" | "generate" | "validate";
+type StageId =
+    | "validate_input"
+    | "parse"
+    | "rag"
+    | "semantic"
+    | "generate"
+    | "validate";
 
 type StageResult = {
     stage: StageId;
@@ -26,11 +32,12 @@ type JobState = {
 };
 
 const STAGE_LABELS: Record<StageId, string> = {
-    parse:    "1. OPM Analysis & Hybrid Visual-Semantic Parsing",
-    semantic: "2. Semantic Interpretation & System Specification",
-    rag:      "3. Syntax-Aware RAG & Multi-Model Reasoning",
-    generate: "4. Full-Stack Code Generation",
-    validate: "5. Automated Validation & Refinement",
+    validate_input: "0. Validate Input Format & Completeness",
+    parse:          "1a. Parse OPM Elements (fork)",
+    rag:            "1b. Retrieve ISO 19450 Rules (RAG, fork)",
+    semantic:       "2. Semantic Analysis & Blueprint (Gemini + ChatGPT)",
+    generate:       "3. Full-Stack Code Generation (Claude)",
+    validate:       "4. Validate + Refinement Loop",
 };
 
 const MOCK_TRACE = [
@@ -192,16 +199,18 @@ export default function DashboardClient() {
                         <div className="stages">
                             {(job?.stages ?? placeholderStages()).map((s) => {
                                 const isExpandable = s.status === "done" && !!s.output;
+                                const extra = stageExtra(s);
                                 return (
                                     <div
                                         key={s.stage}
                                         className={`stage ${s.status}`}
                                         style={{ cursor: isExpandable ? "pointer" : "default" }}
                                         onClick={() => isExpandable && setExpanded(expanded === s.stage ? null : s.stage)}
+                                        title={s.error ?? ""}
                                     >
                                         <div className="dot" />
                                         <div className="label">{STAGE_LABELS[s.stage]}</div>
-                                        <div className="status">{s.status}</div>
+                                        <div className="status">{extra ?? s.status}</div>
                                     </div>
                                 );
                             })}
@@ -224,7 +233,16 @@ export default function DashboardClient() {
                             </div>
                         )}
 
-                        {job?.done && (
+                        {job?.done && job.stages.some((s) => s.status === "error") && (
+                            <div className="error" style={{ marginTop: "1rem" }}>
+                                Pipeline halted: {
+                                    job.stages.find((s) => s.status === "error")?.error
+                                    ?? "input validation failed"
+                                }
+                            </div>
+                        )}
+
+                        {job?.done && job.stages.every((s) => s.status === "done") && (
                             <>
                                 <div style={{ height: "1.5rem" }} />
                                 <h3>3. Traceability Report</h3>
@@ -249,6 +267,24 @@ export default function DashboardClient() {
             </main>
         </div>
     );
+}
+
+function stageExtra(s: StageResult): string | null {
+    if (s.status !== "done" || !s.output) return null;
+    const o = s.output as Record<string, unknown>;
+    if (s.stage === "validate") {
+        const iters = (o.metadata as Record<string, unknown> | undefined)?.iterations;
+        if (typeof iters === "number") return `done · ${iters} refinement iter${iters === 1 ? "" : "s"}`;
+    }
+    if (s.stage === "rag") {
+        const chunks = o.retrievedChunks;
+        if (typeof chunks === "number") return `done · ${chunks} RAG chunks`;
+    }
+    if (s.stage === "generate") {
+        const total = o.totalFiles;
+        if (typeof total === "number") return `done · ${total} files`;
+    }
+    return null;
 }
 
 function placeholderStages(): StageResult[] {

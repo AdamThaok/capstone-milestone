@@ -14,11 +14,12 @@ export function createJob(input: { filename: string; format: string; targetStack
         targetStack: input.targetStack,
         createdAt: now,
         stages: [
-            { stage: "parse",    status: "pending", startedAt: now },
-            { stage: "semantic", status: "pending", startedAt: now },
-            { stage: "rag",      status: "pending", startedAt: now },
-            { stage: "generate", status: "pending", startedAt: now },
-            { stage: "validate", status: "pending", startedAt: now },
+            { stage: "validate_input", status: "pending", startedAt: now },
+            { stage: "parse",          status: "pending", startedAt: now },
+            { stage: "rag",            status: "pending", startedAt: now },
+            { stage: "semantic",       status: "pending", startedAt: now },
+            { stage: "generate",       status: "pending", startedAt: now },
+            { stage: "validate",       status: "pending", startedAt: now },
         ],
         done: false,
     };
@@ -40,5 +41,7 @@ export function updateStage(
     const idx = job.stages.findIndex((s) => s.stage === stage);
     if (idx < 0) return;
     job.stages[idx] = { ...job.stages[idx], ...patch };
-    if (job.stages.every((s) => s.status === "done")) job.done = true;
+    const allDone    = job.stages.every((s) => s.status === "done");
+    const anyError   = job.stages.some((s)  => s.status === "error");
+    if (allDone || anyError) job.done = true;
 }
