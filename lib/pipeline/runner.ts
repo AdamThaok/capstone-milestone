@@ -22,7 +22,7 @@ import { updateStage, getJob, patchJob } from "./jobs";
 import type { StageId } from "./types";
 
 const STAGE_DELAY_MS   = 200;
-const STAGE_TIMEOUT_MS = 180_000;
+const STAGE_TIMEOUT_MS = 300_000;   // 5 min — Gemini-2.5-pro codegen is slow
 const MAX_RETRIES      = 1;
 
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }

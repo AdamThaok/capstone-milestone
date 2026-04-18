@@ -39,17 +39,56 @@ Given:
 3. The ISO 19450 rules below.
 
 Produce a single consolidated "super prompt" that a code generator can follow
-to emit a complete, compilable full-stack project matching the OPM model.
+to emit a complete, compilable, ZERO-CONFIG full-stack project matching the
+OPM model.
 
 Target stack: React + Vite (frontend), FastAPI + Python (backend),
-Firebase Firestore (database), docker-compose (orchestration).
+Firebase FIRESTORE EMULATOR (local in-memory DB — no Firebase account needed),
+docker-compose (orchestration).
+
+NON-TECHNICAL USER REQUIREMENTS (HARD):
+- Target audience: someone who has never used a terminal before.
+- docker-compose.yml MUST launch TWO services: backend (FastAPI + firebase-admin)
+  and frontend (React + nginx). Both exposed on fixed ports.
+- Backend connects to user's OWN Firebase Firestore via service account JSON
+  at \`backend/firebase-credentials.json\`. It must fail with a CLEAR human
+  message (not a stacktrace) if that file is missing — "Missing
+  firebase-credentials.json. See SETUP.md step 4."
+- Backend MUST run a seed script on first startup (seed.py) that inserts
+  3–5 sample rows per collection derived from OPM object names/states.
+  Script must be idempotent (skip collection if already populated).
+- Frontend uses axios to call backend only. No firebase JS SDK on frontend.
+- Emit SETUP.md as the primary entry-point document. It must contain:
+  1. "What you need" — links to install Docker Desktop (Windows/Mac/Linux)
+  2. "Create a free Firebase project" — link to console.firebase.google.com
+     → instructions: "Add project" → name it anything → disable Analytics
+     → wait → "Build → Firestore Database → Create database → Start in
+     production mode → pick region → Enable"
+  3. "Download your credentials" — "Project settings (gear icon) →
+     Service accounts → Generate new private key → save as
+     \`firebase-credentials.json\` inside the \`backend\` folder"
+  4. "Run it" — open terminal in project folder → \`docker compose up\` →
+     wait for "Ready" → open http://localhost:5173
+  5. Troubleshooting: "port already in use", "docker not recognized",
+     "credentials error"
+- Emit README.md as a one-page summary pointing to SETUP.md.
+- Include scripts/check-setup.sh and scripts/check-setup.bat that verify
+  Docker + credentials file exist before compose runs, with friendly
+  error messages.
+- CORS: backend allows frontend origin only; no wildcards.
+- Include .gitignore that excludes firebase-credentials.json — never
+  committable.
 
 The super prompt must:
 - Enumerate every entity, endpoint, screen, business rule.
 - Embed the relevant ISO rules inline (do NOT omit).
 - State hard constraints: no extra features, validate state transitions,
   no invented fields, include TRACEABILITY.md, include README.md, include
-  docker-compose.yml, include Firestore security rules.
+  docker-compose.yml, include firestore.rules (emulator reads these).
+- Include seed.py that populates sample data for every OPM object.
+- Include a \`scripts/wait-for-emulator.sh\` or equivalent so backend waits
+  for emulator before seeding.
+- README must have a single "Quick start" section: just \`docker compose up\`.
 - Instruct the generator to emit files as a JSON object
   { "files": [ { "path": "...", "content": "..." } ] } so the runner can
   write them to disk and build.
