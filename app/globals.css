@@ -58,7 +58,10 @@ button.ghost:hover { border-color: #444; }
 .stage.active .dot { background: #7aa2f7; box-shadow: 0 0 8px #7aa2f7; animation: pulse 1.2s infinite; }
 .stage.done .dot { background: #4ade80; }
 .stage.done { color: #ededed; }
+.stage.done:hover { border-color: #7aa2f7; }
 .stage.pending { color: #666; }
+.stage.error .dot { background: #f87171; }
+.stage.error { color: #f87171; }
 .stage .label { flex: 1; }
 .stage .status { font-size: .7rem; color: #666; text-transform: uppercase; letter-spacing: .05em; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
